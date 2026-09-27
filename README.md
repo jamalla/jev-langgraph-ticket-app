@@ -40,11 +40,12 @@ START ─→ supervisor_jev ─→ route ─────┼─ billing_agent ─
 
 1. [backend/app/graph.py](backend/app/graph.py): the whole workflow. Start here.
 2. [backend/app/jev.py](backend/app/jev.py): the Jev questions, the real SDK call and the keyword mock.
-3. [backend/app/llm.py](backend/app/llm.py): the agent prompts and `ChatAnthropic`.
-4. [backend/app/main.py](backend/app/main.py): FastAPI, the SSE stream, pause and resume, and the Jev-vs-LLM summary.
-5. [frontend/app.js](frontend/app.js): reads the stream and draws the timeline.
+3. [backend/app/llm.py](backend/app/llm.py): the agent prompts and the chat model (`ChatOpenAI` or `ChatAnthropic`).
+4. [backend/app/main.py](backend/app/main.py): FastAPI, the SSE stream, and pause and resume.
+5. [backend/app/compare.py](backend/app/compare.py): asks the real LLM Jev's four questions on the same ticket, to measure the comparison.
+6. [frontend/app.js](frontend/app.js): reads the stream and draws the timeline.
 
-[backend/app/config.py](backend/app/config.py) holds the environment variables and benchmark constants.
+[backend/app/config.py](backend/app/config.py) holds the environment variables and the mock-mode values.
 
 ## 4. Run it
 
@@ -138,7 +139,9 @@ State lives in memory (`InMemorySaver`), so a restart forgets any paused runs. T
 
 ## 9. Notes
 
-- **Benchmark numbers are LangChain's, not measured by this app.** The router comparison in the stats panel uses per-page averages from [J5]: Jev 0.34 s and ~661 tokens vs Claude Sonnet 5 3.80 s and ~1,466 tokens. The agent steps are the same in both columns; only the router differs.
+- **Every number in the stats panel is measured on the current ticket.** For each ticket, the app also asks the real LLM Jev's four questions (structured output, same routing rules), in parallel so the run is not slowed. The panel shows both routers' time, tokens and chosen route, then this run's totals. Without a real LLM key there is nothing to measure, so the LLM side shows "—".
+- **Mock mode numbers are not measurements.** They are fixed values, and the UI marks them with `(mock)` and `محاكاة`.
+- **Timings include the network.** Each time is measured around the whole API call, from wherever the server runs (e.g. Render's region).
 - **Mock mode uses keywords, not a model.** For example, `عاجل: الدفع متوقف لجميع العملاء.` contains `دفع`, so the mock scores it as billing, and billing wins in `route`. A real Jev may judge it differently. That is the point of using a model.
 - On resume, LangGraph re-runs `human_review` from its start, so code before `interrupt()` must be safe to run twice ([L3]).
 

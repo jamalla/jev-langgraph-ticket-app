@@ -44,7 +44,7 @@ async function startRun(text) {
   const response = await fetch("/api/run", {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }),
   });
-  await readStream(response);
+  await readStream(response, run);
   unlockIfStreamBroke();
 }
 
@@ -56,7 +56,7 @@ async function resumeRun(decision) {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ thread_id: run.threadId, decision }),
   });
-  await readStream(response);
+  await readStream(response, run);
   unlockIfStreamBroke();
 }
 
@@ -65,7 +65,8 @@ function unlockIfStreamBroke() {
   if (!run.finished && !run.waiting) { setBusy(false); setWaiting(false); }
 }
 
-async function readStream(response) {
+// `owner` is the run that opened this stream; events from an older run are ignored.
+async function readStream(response, owner) {
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -77,7 +78,7 @@ async function readStream(response) {
     buffer = messages.pop(); // the last piece may be incomplete; keep it for the next read
     for (const message of messages) {
       for (const line of message.split("\n")) {
-        if (line.startsWith("data: ")) onEvent(JSON.parse(line.slice(6)));
+        if (line.startsWith("data: ") && owner === run) onEvent(JSON.parse(line.slice(6)));
       }
     }
   }
@@ -102,8 +103,12 @@ function onEvent(ev) {
     renderStep({ node: "END", model: "—", ms: 0, tokens: null, code: 'return state["reply"]' });
     if (run.route === "close_spam") addMessage("pill", "أُغلقت كرسالة مزعجة");
     else addMessage("bot", ev.reply, `${run.lastNode} · ${secs(run.totalMs)}`);
-    renderStats(ev.summary);
+    run.totals = ev.run;
+    renderStats();
     setBusy(false);
+  } else if (ev.type === "compare") {
+    run.router = ev.router;
+    renderStats();
   }
   renderGraphStrip();
 }
@@ -192,31 +197,54 @@ function renderGraphStrip() {
   $("clock").textContent = secs(run ? run.totalMs : 0);
 }
 
-function renderStats(s) {
+// Every number here is measured: Jev's routing step, the real LLM doing the same job on the
+// same ticket (the "compare" event), and this run's totals. Nothing measured → "—".
+function renderStats() {
+  const t = run?.totals, jev = run?.router?.jev, llm = run?.router?.llm;
+  const pending = t && !run.router; // the LLM measurement is still running
   const n = (x) => (x == null ? "—" : x.toLocaleString("en"));
-  const r = s?.router;
-  const speed = r ? `×${Math.round(r.llm_ms / r.jev_ms)}` : "—";
-  const saved = r ? `${Math.round((1 - r.jev_tokens / r.llm_tokens) * 100)}%` : "—";
-  const bar = (kind, label, ms, tokens) => `<div class="rbar ${kind}">
-      <div class="lbl"><span dir="ltr">${label}</span><span dir="ltr">${r ? `${secs(ms)} · ${n(tokens)} tok` : "—"}</span></div>
-      <div class="track"><div class="fill" style="width:${r ? (ms / r.llm_ms) * 100 : 0}%"></div></div></div>`;
-  const row = (label, key, fmt) => `<tr><td>${label}</td>
-      <td class="num" dir="ltr">${s ? fmt(s.jev[key]) : "—"}</td><td class="num" dir="ltr">${s ? fmt(s.llm[key]) : "—"}</td></tr>`;
+  let speed = "—", speedLabel = "أسرع", saved = "—", savedLabel = "توكنز أقل";
+  if (jev && llm) {
+    const ratio = llm.ms / jev.ms;
+    const x = ratio >= 1 ? ratio : 1 / ratio;
+    speed = `×${x >= 10 ? Math.round(x) : x.toFixed(1)}`;
+    if (ratio < 1) speedLabel = "أبطأ";
+    const pct = Math.round((1 - jev.tokens / llm.tokens) * 100);
+    saved = `${Math.abs(pct)}%`;
+    if (pct < 0) savedLabel = "توكنز أكثر";
+  }
+  const max = Math.max(jev?.ms || 0, llm?.ms || 0) || 1;
+  const bar = (kind, label, side) => `<div class="rbar ${kind}">
+      <div class="lbl"><span dir="ltr">${label}</span><span dir="ltr">${side ? `${secs(side.ms)} · ${n(side.tokens)} tok`
+        : kind === "llm" && pending ? "…" : "—"}</span></div>
+      <div class="track"><div class="fill" style="width:${side ? (side.ms / max) * 100 : 0}%"></div></div></div>`;
+  const cell = (side, value, cls = "") => `<td class="num ${cls}" dir="ltr">${side ? value : "—"}</td>`;
+  const differ = jev && llm && jev.route !== llm.route ? "differ" : "";
+  const total = (label, value) => `<tr><td>${label}</td><td class="num" dir="ltr">${t ? value : "—"}</td></tr>`;
+  const foot = jev?.model.includes("(mock)") ? "محاكاة: الأرقام ليست مقاسة"
+    : llm ? `مقاس على هذه التذكرة · LLM: ${esc(llm.model)}`
+    : run?.router?.error ? `تعذّر قياس LLM · ${esc(run.router.error)}`
+    : run?.router ? "المقارنة تتطلب LLM حقيقي" : "";
   $("stats").innerHTML = `
     <div class="panel-label">التوجيه: Jev مقابل LLM</div>
     <div class="tiles">
-      <div class="tile jev"><b dir="ltr">${speed}</b><span>أسرع</span></div>
-      <div class="tile"><b dir="ltr">${saved}</b><span>توكنز أقل</span></div>
+      <div class="tile jev"><b dir="ltr">${speed}</b><span>${speedLabel}</span></div>
+      <div class="tile"><b dir="ltr">${saved}</b><span>${savedLabel}</span></div>
     </div>
-    ${bar("jev", "Jev", r?.jev_ms, r?.jev_tokens)}
-    ${bar("llm", "LLM", r?.llm_ms, r?.llm_tokens)}
+    ${bar("jev", "Jev", jev)}
+    ${bar("llm", "LLM", llm)}
+    <table class="table">
+      <tr><th></th><th class="th-jev">Jev</th><th class="th-llm">LLM</th></tr>
+      <tr><td>الزمن</td>${cell(jev, jev && secs(jev.ms))}${cell(llm, llm && secs(llm.ms))}</tr>
+      <tr><td>التوكنز</td>${cell(jev, n(jev?.tokens))}${cell(llm, n(llm?.tokens))}</tr>
+      <tr class="route-row"><td>المسار</td>${cell(jev, esc(jev?.route))}${cell(llm, esc(llm?.route), differ)}</tr>
+    </table>
     <hr>
     <div class="panel-label">هذه التذكرة</div>
     <table class="table">
-      <tr><th></th><th class="th-jev">Jev</th><th class="th-llm">LLM</th></tr>
-      ${row("الزمن", "ms", secs)}${row("التوكنز", "tokens", n)}${row("استدعاءات LLM", "llm_calls", n)}
+      ${total("الزمن", t && secs(t.ms))}${total("التوكنز", n(t?.tokens))}${total("استدعاءات LLM", n(t?.llm_calls))}
     </table>
-    <div class="foot">مرجع LLM: معيار LangChain (Sonnet 5)</div>`;
+    <div class="foot">${foot}</div>`;
 }
 
 function addMessage(kind, text, meta) {
@@ -271,5 +299,5 @@ $("form").onsubmit = (e) => {
   startRun(text);
 };
 renderGraphStrip();
-renderStats(null);
+renderStats();
 loadHealth();

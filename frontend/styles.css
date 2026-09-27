@@ -137,6 +137,9 @@ body.awaiting .input-row input::placeholder { color: var(--human); }
 .table td { padding: 7px 0; }
 .table .num { font-family: var(--mono); }
 .th-jev { color: var(--jev); } .th-llm { color: var(--llm); }
+.table { margin-block-start: 12px; }
+.route-row .num { font-size: 11px; }
+.table .differ { color: var(--llm); font-weight: 700; }
 .foot { margin-block-start: auto; padding-block-start: 24px; font-size: 11px; color: var(--muted); }
 
 /* One column on narrow screens */

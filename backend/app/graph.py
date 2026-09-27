@@ -52,17 +52,20 @@ def supervisor_jev(state: State) -> dict:
     return {"answers": result["answers"], "trace": [step]}
 
 
-def route(state: State) -> dict:
-    # Plain Python: the first rule that fires wins. No model call here.
-    a = state["answers"]
+def pick_route(a: dict) -> tuple[str, str]:
+    """Plain Python: the first rule that fires wins. Returns (target node, rule text)."""
     if a["is_spam"] > SPAM:
-        target, rule = "close_spam", f'is_spam {a["is_spam"]:.2f} > {SPAM}'
-    elif a["is_billing"] > BILLING:
-        target, rule = "billing_agent", f'is_billing {a["is_billing"]:.2f} > {BILLING}'
-    elif a["is_technical"] > TECHNICAL:
-        target, rule = "tech_agent", f'is_technical {a["is_technical"]:.2f} > {TECHNICAL}'
-    else:
-        target, rule = "faq_agent", "no rule matched"
+        return "close_spam", f'is_spam {a["is_spam"]:.2f} > {SPAM}'
+    if a["is_billing"] > BILLING:
+        return "billing_agent", f'is_billing {a["is_billing"]:.2f} > {BILLING}'
+    if a["is_technical"] > TECHNICAL:
+        return "tech_agent", f'is_technical {a["is_technical"]:.2f} > {TECHNICAL}'
+    return "faq_agent", "no rule matched"
+
+
+def route(state: State) -> dict:
+    # No model call here, just the rules above.
+    target, rule = pick_route(state["answers"])
     step = {"node": "route", "kind": "code", "model": "python", "ms": 0, "tokens": 0,
             "code": f'{rule}  →  return "{target}"', "target": target}
     return {"route": target, "trace": [step]}

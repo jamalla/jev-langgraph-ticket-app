@@ -7,6 +7,7 @@ Docs: streaming https://docs.langchain.com/oss/python/langgraph/streaming
 """
 import json
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Literal
 
@@ -17,11 +18,17 @@ from langgraph.types import Command
 from pydantic import BaseModel
 
 from . import config
+from .compare import ask_llm_router
 from .graph import graph
 
 FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
 
 app = FastAPI(title="jev-langgraph-ticket-app")
+
+# The LLM-router measurement runs next to the graph, so it never slows the run.
+# Results wait here by thread_id until the run finishes (in memory, like the checkpointer).
+pool = ThreadPoolExecutor(max_workers=4)
+comparisons = {}
 
 
 class RunRequest(BaseModel):
@@ -38,23 +45,23 @@ def event(event_type: str, **data) -> str:
     return f"data: {json.dumps({'type': event_type, **data}, ensure_ascii=False)}\n\n"
 
 
-def summary(trace: list[dict]) -> dict:
-    """Totals for this run routed by Jev vs the same run routed by an LLM.
+def totals(trace: list[dict]) -> dict:
+    """What this run actually cost, summed from the measured steps."""
+    return {"ms": sum(s["ms"] for s in trace), "tokens": sum(s["tokens"] for s in trace),
+            "llm_calls": sum(1 for s in trace if s["kind"] == "llm")}
 
-    The LLM agent steps are identical in both; only the router differs.
-    """
+
+def router_comparison(trace: list[dict], future) -> dict:
+    """Jev's routing step next to the LLM doing the same job on the same ticket."""
     jev_step = next(s for s in trace if s["node"] == "supervisor_jev")
-    ms = sum(s["ms"] for s in trace)
-    tokens = sum(s["tokens"] for s in trace)
-    llm_calls = sum(1 for s in trace if s["kind"] == "llm")
-    return {
-        "jev": {"ms": ms, "tokens": tokens, "llm_calls": llm_calls},
-        "llm": {"ms": ms - jev_step["ms"] + config.LLM_ROUTER_MS,
-                "tokens": tokens - jev_step["tokens"] + config.LLM_ROUTER_TOKENS,
-                "llm_calls": llm_calls + 1},
-        "router": {"jev_ms": jev_step["ms"], "jev_tokens": jev_step["tokens"],
-                   "llm_ms": config.LLM_ROUTER_MS, "llm_tokens": config.LLM_ROUTER_TOKENS},
-    }
+    route_step = next(s for s in trace if s["node"] == "route")
+    jev = {"ms": jev_step["ms"], "tokens": jev_step["tokens"], "model": jev_step["model"],
+           "route": route_step["target"]}
+    try:
+        llm = future.result(timeout=120) if future else None
+    except Exception as exc:  # show "no measurement" rather than a made-up one
+        return {"jev": jev, "llm": None, "error": type(exc).__name__}
+    return {"jev": jev, "llm": llm, "error": None}
 
 
 def stream_run(graph_input, thread_id: str):
@@ -75,7 +82,9 @@ def stream_run(graph_input, thread_id: str):
     # A resumed run only streams the steps after the pause, so read the full
     # trace from the checkpoint for the totals.
     trace = graph.get_state(run_config).values["trace"]
-    yield event("done", reply=reply, summary=summary(trace))
+    yield event("done", reply=reply, run=totals(trace))
+    # Sent after "done" so the user never waits for the comparison.
+    yield event("compare", router=router_comparison(trace, comparisons.pop(thread_id, None)))
 
 
 def sse(generator) -> StreamingResponse:
@@ -90,7 +99,10 @@ def health():
 
 @app.post("/api/run")
 def run(req: RunRequest):
-    return sse(stream_run({"text": req.text}, str(uuid.uuid4())))
+    thread_id = str(uuid.uuid4())
+    if config.USE_REAL_LLM:
+        comparisons[thread_id] = pool.submit(ask_llm_router, req.text)
+    return sse(stream_run({"text": req.text}, thread_id))
 
 
 @app.post("/api/resume")
