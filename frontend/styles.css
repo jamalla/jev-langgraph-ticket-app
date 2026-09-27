@@ -90,10 +90,34 @@ body { background: var(--bg); color: var(--ink); font-family: var(--sans); font-
 .bar-row.hit .fill { background: var(--jev); }
 .bar-row .num { text-align: end; }
 .draft { background: var(--panel); border: 1px solid var(--line); border-inline-start: 3px solid var(--human); border-radius: 6px; padding: 10px 12px; line-height: 1.7; }
-.actions { display: flex; gap: 8px; }
-.actions button { font: inherit; font-size: 13px; padding: 6px 16px; border-radius: 6px; cursor: pointer; border: 1px solid var(--human); }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.actions button { font: inherit; font-size: 13px; font-weight: 600; padding: 9px 16px; border-radius: 8px; cursor: pointer; border: 1.5px solid var(--human); }
 .approve { background: var(--human); color: #fff; }
+.approve:hover:not(:disabled) { background: #652F84; }
 .reject { background: var(--panel); color: var(--human); }
+.reject:hover:not(:disabled) { background: #F4ECF8; }
+
+/* Human in the loop: the graph is paused at interrupt() and needs a decision */
+.pulse { width: 9px; height: 9px; border-radius: 50%; background: var(--human); display: inline-block; flex: none; animation: pulse 1.4s infinite; }
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0 rgba(122, 62, 157, .55); }
+  70% { box-shadow: 0 0 0 9px rgba(122, 62, 157, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(122, 62, 157, 0); }
+}
+.review { align-self: stretch; display: grid; gap: 10px; padding: 14px; border: 2px solid var(--human); border-radius: 12px; background: #F8F2FB; }
+.review-head { display: flex; align-items: center; gap: 8px; font-weight: 700; color: var(--human); }
+.review-label { font-size: 11px; color: var(--muted); }
+.review-draft { background: var(--panel); border-radius: 8px; padding: 10px 12px; line-height: 1.7; white-space: pre-wrap; }
+.review .actions button { flex: 1; padding-inline: 10px; white-space: nowrap; }
+.review.resolved { gap: 0; padding: 8px 14px; border: 1px solid var(--line); background: var(--panel-2); }
+.review.resolved .review-head { font-size: 12px; font-weight: 600; }
+.review.resolved.is-approved .review-head { color: var(--end); }
+.review.resolved.is-rejected .review-head { color: var(--human); }
+.review.resolved .review-label, .review.resolved .review-draft { display: none; }
+.wait-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--human); background: #F1E7F7; padding: 2px 10px; border-radius: 999px; }
+.step.waiting .body { border: 2px solid var(--human); background: #F8F2FB; border-radius: 10px; padding: 12px; }
+.gnode.waiting { background: var(--human); color: #fff; font-weight: 600; border-color: transparent; animation: pulse 1.4s infinite; }
+body.awaiting .input-row input::placeholder { color: var(--human); }
 
 /* Stats */
 .stats { background: var(--panel); border-inline-start: 1px solid var(--line); padding: 0 16px 16px; overflow-y: auto; }

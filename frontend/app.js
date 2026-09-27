@@ -51,6 +51,7 @@ async function startRun(text) {
 async function resumeRun(decision) {
   document.querySelectorAll(".actions button").forEach((b) => (b.disabled = true));
   run.waiting = false;
+  $("messages").insertAdjacentHTML("beforeend", `<div class="typing"></div>`);
   const response = await fetch("/api/resume", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ thread_id: run.threadId, decision }),
@@ -61,7 +62,7 @@ async function resumeRun(decision) {
 
 // If the server failed mid-run (no "done" or "paused"), let the user try again.
 function unlockIfStreamBroke() {
-  if (!run.finished && !run.waiting) setBusy(false);
+  if (!run.finished && !run.waiting) { setBusy(false); setWaiting(false); }
 }
 
 async function readStream(response) {
@@ -93,6 +94,8 @@ function onEvent(ev) {
     run.running = "human_review";
     renderStep({ node: "human_review", model: "human", paused: true, draft: ev.payload.reply,
                  code: 'decision = interrupt({"reply": reply})' });
+    addMessage("review", ev.payload.reply, run.lastNode);
+    setWaiting(true);
   } else if (ev.type === "done") {
     run.running = null;
     run.finished = true;
@@ -121,26 +124,25 @@ function renderStep(ev) {
   if (!ev.paused) run.visited.add(ev.node);
   if (isLive) { run.running = nextNode(ev); if (ev.node !== "route") run.lastNode = ev.node; }
 
-  const chips = ev.node === "human_review" ? [ "interrupt" ]
+  const chips = ev.node === "human_review" ? ["interrupt"]
     : ev.tokens === null ? []
     : [ev.ms ? `${ev.ms}ms` : "<1ms", `${ev.tokens.toLocaleString("en")} tok`];
   const li = document.createElement("li");
-  li.className = "step";
+  li.className = ev.paused ? "step waiting" : "step";
   li.style.setProperty("--c", color(ev.node));
   li.innerHTML = `
     <div class="t" dir="ltr">+${secs(run.totalMs)}</div>
     <div class="dot">${$("steps").children.length + 1}</div>
     <div class="body">
       <div class="title-row"><h3>${esc(TITLES[ev.node])}</h3>
-        ${chips.map((c) => `<span class="chip" dir="ltr">${esc(c)}</span>`).join("")}</div>
+        ${chips.map((c) => `<span class="chip" dir="ltr">${esc(c)}</span>`).join("")}
+        ${ev.paused ? `<span class="wait-badge"><i class="pulse"></i>بانتظار قرارك</span>` : ""}</div>
       <div class="tags">
         <span class="tag"><span class="k">العقدة</span><span class="v" dir="ltr">${esc(ev.node)}</span></span>
         <span class="tag model"><span class="k">النموذج</span><span class="v" dir="ltr">${esc(ev.model)}</span></span>
       </div>
       ${ev.answers ? renderBars(ev.answers, ev.thresholds) : ""}
-      ${ev.paused ? `<div class="draft">${esc(ev.draft)}</div>
-        <div class="actions"><button class="approve" onclick="resumeRun('approve')">موافقة</button>
-        <button class="reject" onclick="resumeRun('reject')">رفض</button></div>` : ""}
+      ${ev.paused ? `<div class="draft">${esc(ev.draft)}</div>${reviewButtons()}` : ""}
       <pre class="snippet" dir="ltr">${esc(ev.code)}</pre>
     </div>`;
   $("steps").appendChild(li);
@@ -151,8 +153,16 @@ function renderStep(ev) {
 // The human_review step already exists (drawn on "paused"); update it in place.
 function finishReview(ev) {
   const li = run.steps.human_review;
-  li.querySelector(".actions").remove();
+  li.classList.remove("waiting");
+  li.querySelector(".wait-badge").remove();
+  document.querySelectorAll(".actions").forEach((a) => a.remove());
   li.querySelector(".snippet").textContent = `${ev.code}\nCommand(resume="${ev.decision}")`;
+  // Collapse the chat card to a one-line result; the reply itself follows as a bot bubble.
+  const card = document.querySelector(".review:not(.resolved)");
+  card.classList.add("resolved", ev.decision === "approve" ? "is-approved" : "is-rejected");
+  card.querySelector(".review-head").textContent =
+    ev.decision === "approve" ? "✓ تمت الموافقة على الرد" : "✕ رُفض الرد · حُوِّل إلى موظف";
+  setWaiting(false);
   if (ev.decision === "reject") run.lastNode = "human_review"; // the handoff reply came from here
   run.visited.add("human_review");
 }
@@ -172,7 +182,7 @@ function renderBars(answers, thresholds) {
 function renderGraphStrip() {
   const node = (name) => {
     const state = run?.visited.has(name) ? "visited" : "";
-    const running = run?.running === name ? "running" : "";
+    const running = run?.running === name ? (run.waiting ? "waiting" : "running") : "";
     return `<span class="gnode ${state} ${running}" style="--c:${color(name)}" dir="ltr">${name}</span>`;
   };
   const arrow = `<span class="arrow">←</span>`;
@@ -216,13 +226,31 @@ function addMessage(kind, text, meta) {
   if (kind === "pill") box.insertAdjacentHTML("beforeend", `<div class="pill">${esc(text)}</div>`);
   if (kind === "bot") box.insertAdjacentHTML("beforeend",
     `<div class="bot-wrap"><div class="msg bot">${esc(text)}</div><div class="meta">${ltr(meta)}</div></div>`);
-  if (run?.running || kind === "user") box.insertAdjacentHTML("beforeend", `<div class="typing"></div>`);
+  if (kind === "review") box.insertAdjacentHTML("beforeend", `<div class="review">
+      <div class="review-head"><i class="pulse"></i>بانتظار موافقتك</div>
+      <div class="review-label">مسودة الرد · ${ltr(meta)}</div>
+      <div class="review-draft">${esc(text)}</div>${reviewButtons()}</div>`);
+  if ((run?.running && !run.waiting) || kind === "user") box.insertAdjacentHTML("beforeend", `<div class="typing"></div>`);
   box.scrollTop = box.scrollHeight;
+}
+
+// The same approve/reject pair appears in the chat card and in the timeline step.
+function reviewButtons() {
+  return `<div class="actions">
+    <button class="approve" onclick="resumeRun('approve')">✓ موافقة وإرسال</button>
+    <button class="reject" onclick="resumeRun('reject')">✕ رفض · تحويل لموظف</button></div>`;
 }
 
 function setBusy(busy) {
   document.querySelectorAll("#input, #send, .samples button").forEach((el) => (el.disabled = busy));
   if (!busy) { document.querySelector(".typing")?.remove(); $("input").focus(); }
+}
+
+// While the graph is paused at interrupt(), make it obvious everywhere that a human is needed.
+function setWaiting(waiting) {
+  document.body.classList.toggle("awaiting", waiting);
+  $("input").placeholder = waiting ? "بانتظار قرارك على الرد أعلاه…" : "اكتب مشكلتك…";
+  document.title = (waiting ? "⏸ بانتظار موافقتك · " : "") + "فرز التذاكر · Jev + LangGraph";
 }
 
 // ---------- start-up ----------
