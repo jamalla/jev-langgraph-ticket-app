@@ -1,5 +1,6 @@
 # Render Blueprint: one Docker web service. https://render.com/docs/blueprint-spec
-# Keys are optional: leave them empty to run in mock mode.
+# Render asks for the sync:false values once, when the Blueprint is created.
+# All are optional: empty keys run that model in mock mode, empty models use the defaults.
 services:
   - type: web
     name: jev-langgraph-ticket-app
@@ -17,6 +18,6 @@ services:
       - key: ANTHROPIC_API_KEY
         sync: false
       - key: JEV_MODEL
-        value: jev-latest
+        sync: false
       - key: LLM_MODEL
         sync: false

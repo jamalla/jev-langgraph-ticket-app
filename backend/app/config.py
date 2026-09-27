@@ -10,7 +10,8 @@ TYPESAFE_API_KEY = os.getenv("TYPESAFE_API_KEY", "")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
-JEV_MODEL = os.getenv("JEV_MODEL", "jev-latest")
+# `or` also covers a variable that is set but empty (e.g. left blank on Render).
+JEV_MODEL = os.getenv("JEV_MODEL") or "jev-latest"
 # Empty means TypeSafe's own API. Set it to use another Jev provider with the
 # same API, e.g. OpenCode Zen: https://opencode.ai/zen (model "jev-1.13-free").
 # https://opencode.ai/docs/zen/
