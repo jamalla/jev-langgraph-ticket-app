@@ -1,0 +1,28 @@
+# Pings the Render app so the free instance does not spin down after 15 idle minutes.
+# GitHub runs schedules on a best-effort basis: 5 minutes is the shortest interval,
+# and runs can start late when GitHub is busy.
+# https://docs.github.com/actions/writing-workflows/choosing-when-your-workflow-runs/events-that-trigger-workflows#schedule
+name: Keep Render awake
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch: # allows a manual run from the Actions tab
+
+permissions: {} # the job only calls a public URL
+
+concurrency:
+  group: keep-awake
+  cancel-in-progress: true
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping /api/health
+        # A cold start can take about a minute, so allow time and retry.
+        run: |
+          curl --fail --silent --show-error \
+            --max-time 90 --retry 3 --retry-delay 15 --retry-all-errors \
+            https://jev-langgraph-ticket-app.onrender.com/api/health
