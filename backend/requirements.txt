@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+langgraph>=1.2
+typesafe-sdk
+langchain-anthropic
+pytest
+httpx
+langchain-openai

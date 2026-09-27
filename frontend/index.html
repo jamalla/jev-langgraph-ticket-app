@@ -1,0 +1,58 @@
+<!doctype html>
+<!-- The page shell: chat (right), LangGraph timeline (centre), stats (left). Logic lives in app.js. -->
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>فرز التذاكر · Jev + LangGraph</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <h1>فرز التذاكر</h1>
+      <span class="sub" dir="ltr">Jev + LangGraph</span>
+      <span class="badge" id="mode-badge">…</span>
+    </div>
+    <div class="legend">
+      <span><i class="sw jev"></i><span dir="ltr">Jev</span></span>
+      <span><i class="sw llm"></i><span dir="ltr">LLM</span></span>
+      <span><i class="sw code"></i>كود</span>
+      <span><i class="sw human"></i>بشري</span>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="panel chat">
+      <div class="panel-label">المحادثة</div>
+      <div class="messages" id="messages"></div>
+      <div class="composer">
+        <div class="samples" id="samples"></div>
+        <form class="input-row" id="form">
+          <input id="input" type="text" placeholder="اكتب مشكلتك…" autocomplete="off">
+          <button id="send" type="submit" aria-label="إرسال">←</button>
+        </form>
+      </div>
+    </section>
+
+    <section class="panel timeline">
+      <div class="strip">
+        <div class="strip-head">
+          <span class="strip-title" dir="ltr">LangGraph</span>
+          <span class="clock" id="clock" dir="ltr">0.00s</span>
+        </div>
+        <div class="graph" id="graph" dir="rtl"></div>
+      </div>
+      <ol class="steps" id="steps"></ol>
+    </section>
+
+    <aside class="panel stats" id="stats"></aside>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

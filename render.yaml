@@ -1,0 +1,22 @@
+# Render Blueprint: one Docker web service. https://render.com/docs/blueprint-spec
+# Keys are optional: leave them empty to run in mock mode.
+services:
+  - type: web
+    name: jev-langgraph-ticket-app
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      - key: TYPESAFE_API_KEY
+        sync: false
+      - key: TYPESAFE_BASE_URL
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: JEV_MODEL
+        value: jev-latest
+      - key: LLM_MODEL
+        sync: false
